@@ -1,10 +1,5 @@
-// ==========================================
-// Bakir Hisab PWA - Original app.js with dynamic site_id
-// ==========================================
-
-const KEY="shudhu-baki-hisab-v2",IDB_NAME="shudhu-baki-hisab-offline-v2",IDB_STORE="app";
+Const KEY="shudhu-baki-hisab-v2",IDB_NAME="shudhu-baki-hisab-offline-v2",IDB_STORE="app";
 let db=JSON.parse(localStorage.getItem(KEY)||"null")||{customers:[],settings:{}};db.customers??=[];db.settings??={};let selectedPage="home",accessToken=null,driveFolderId=null,tokenClient=null,driveBusy=false,backupDirty=localStorage.getItem("shudhu-baki-backup-dirty")==="1",historyCustomerId=null,driveConnected=localStorage.getItem("shudhu-baki-drive-connected")==="1",driveTokenExpiresAt=Number(localStorage.getItem("shudhu-baki-drive-expiry")||0);
-
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)], money=n=>"৳"+Number(n||0).toLocaleString("bn-BD",{maximumFractionDigits:2}), esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])), today=new Date().toISOString().slice(0,10);
 const fmtDMY=d=>{let [y,m,day]=(d||today).split("-");return `${day}-${m}-${y}`};
 const bnWeekdays=["রবিবার","সোমবার","মঙ্গলবার","বুধবার","বৃহস্পতিবার","শুক্রবার","শনিবার"];
@@ -178,7 +173,7 @@ function renderHal(c){
   </div>`;
 }
 async function shareHalCard(id){let c=findCustomer(id),text=`${SHOP_CONFIG.name}\nশুভ হালখাতা\nহালখাতার তারিখ: ${fmtDMY(halDate())}\nবার: ${weekdayBn(halDate())}\nকাস্টমার: ${c.name}\nসমস্ত বকেয়া: ${money(dueOf(c))}`;if(navigator.share){try{await navigator.share({title:'শুভ হালখাতা',text})}catch(e){}}else{try{await navigator.clipboard.writeText(text);toast('হালখাতার তথ্য কপি হয়েছে।')}catch(e){}}}
-async function downloadHalCard(id){const card=document.getElementById('halCard-'+id);if(!card)return;try{if(typeof html2canvas==='undefined')throw Error('IMAGE_LIB');const canvas=await html2canvas(card,{scale:3,backgroundColor:'#ffffff',useCORS:true,allowTaint:false,logging:false});const a=document.createElement('a');a.download='হালখাতা-'+(findCustomer(id)?.name||'কার্ড')+'.png';a.href=canvas.toDataURL('image/png',1.0);document.body.appendChild(a);a.click();a.remove();toast('হালখাতা কার্ড সেভ হয়েছে।')}catch(e){console.error(e);alert('হালখাতা কার্ড ডাউনলোড করা যায়নি। Internet চালু রেখে আবার চেষ্টা করুন।')}}
+async function downloadHalCard(id){const card=document.getElementById('halCard-'+id);if(!card)return;try{if(typeof html2canvas==='undefined')throw Error('IMAGE_LIB');const canvas=await html2canvas(card,{scale:3,backgroundColor:'#ffffff',useCORS:true,allowTaint:false,logging:false});const a=document.createElement('a');a.download='হালখাতা-'+(findCustomer(id)?.name||'কার্ড')+'.png';a.href=canvas.toDataURL('image/png',1.0);document.body.appendChild(a);a.remove();toast('হালখাতা কার্ড সেভ হয়েছে।')}catch(e){console.error(e);alert('হালখাতা কার্ড ডাউনলোড করা যায়নি। Internet চালু রেখে আবার চেষ্টা করুন।')}}
 
 async function downloadAllHalCards(){
   try{
@@ -209,23 +204,11 @@ async function downloadAllHalCards(){
 
 
 /* =========================================================
-   Central subscription/license control with Dynamic site_id
+   Central subscription/license control
    ========================================================= */
 let subscriptionValid = false;
 let subscriptionState = 'Checking';
 let subscriptionExpiry = '';
-
-// ইউআরএল থেকে ডাইনামিক site_id রিড করার ফাংশন
-function getDynamicSiteId() {
-  const params = new URLSearchParams(window.location.search);
-  let siteId = params.get('site_id');
-  if (siteId) {
-    localStorage.setItem('current_site_id', siteId);
-  } else {
-    siteId = localStorage.getItem('current_site_id') || (typeof SITE_ID !== 'undefined' ? SITE_ID : 'rahim_store');
-  }
-  return siteId;
-}
 
 function setSubscriptionLock(locked, reason='') {
   const modal = $('#subscriptionLock');
@@ -260,7 +243,7 @@ function configureSupportLinks() {
 }
 
 function isExpiryValid(expiry) {
-  if (!expiry) return true; // তারিখ না থাকলে বা স্ট্যাটাস active থাকলে সরাসরি পাস করবে
+  if (!expiry) return false;
   const todayKey = new Date().toLocaleDateString('en-CA');
   return String(expiry).slice(0, 10) >= todayKey;
 }
@@ -270,16 +253,16 @@ async function checkSubscriptionStatus() {
   setSubscriptionLock(true, 'Subscription status যাচাই করা হচ্ছে…');
 
   const url = String(ADMIN_API_URL || '').trim();
-  const currentSiteId = getDynamicSiteId();
+  const siteId = String(SITE_ID || '').trim();
 
-  if (!url || url.includes('PASTE_') || !currentSiteId) {
-    setSubscriptionLock(true, 'Admin API বা site_id কনফিগার করা হয়নি।');
+  if (!url || url.includes('PASTE_') || !siteId) {
+    setSubscriptionLock(true, 'Admin API বা SITE_ID config.js-এ সেট করা হয়নি।');
     return false;
   }
 
   try {
     const endpoint = new URL(url);
-    endpoint.searchParams.set('site_id', currentSiteId);
+    endpoint.searchParams.set('site_id', siteId);
     endpoint.searchParams.set('_ts', Date.now().toString());
 
     const response = await fetch(endpoint.toString(), {
@@ -295,8 +278,7 @@ async function checkSubscriptionStatus() {
     const expiry = String(result.expiry_date || '').slice(0, 10);
     subscriptionExpiry = expiry;
 
-    // ছোট হাতের active বা true পেলেই আনলক হয়ে যাবে
-    const active = (status === 'active' || status === 'true' || status === '1');
+    const active = status === 'active' && isExpiryValid(expiry);
     if (!active) {
       subscriptionState = status === 'paused' ? 'Paused' : 'Expired';
       setSubscriptionLock(
@@ -313,10 +295,8 @@ async function checkSubscriptionStatus() {
   } catch (error) {
     console.error('Subscription check failed:', error);
     subscriptionState = 'Unavailable';
-    // নেটওয়ার্ক সমস্যা হলে যাতে অ্যাপ আটকে না যায়, তাই অফলাইনেও রান করার সুযোগ রাখা হলো
-    setSubscriptionLock(false);
-    subscriptionValid = true;
-    return true;
+    setSubscriptionLock(true, 'Subscription status যাচাই করা যায়নি। Internet/API সংযোগ পরীক্ষা করুন।');
+    return false;
   }
 }
 
@@ -393,7 +373,9 @@ if('serviceWorker' in navigator){
 async function bootApp(){
   configureSupportLinks();
   updateDriveConnectionStatus(driveConnected);
-  await checkSubscriptionStatus();
+  setSubscriptionLock(true, 'Subscription status যাচাই করা হচ্ছে…');
+  const allowed = await checkSubscriptionStatus();
+  if(!allowed) return;
 
   go('home');
   await hydrate();
