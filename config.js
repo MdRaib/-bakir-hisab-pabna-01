@@ -10,7 +10,7 @@ var APP_CONFIG = Object.freeze({
   CLIENT_ID: "822363790054-s0n5f46cfj134jgpcog4114jo9qf8fb9.apps.googleusercontent.com",
 
   // Deployed Google Apps Script Web App URL for the central license sheet.
-  ADMIN_API_URL: "https://script.google.com/macros/s/AKfycbwiO_rmFYXaEqqvUxY81HTg2w5n1Mp7jTAqWHRyEyici1cmGF6-jyvBWuz4wo_dDsJv/exec",
+  ADMIN_API_URL: "Https://script.google.com/macros/s/AKfycbwFO6g7zkxZg_sLboudmoDlrUpQdNr_0iGVmclTnm24vVNmqNYFLoc4KpBDVMt190WS/exec",
 
   // MUST be unique for every deployed client instance.
   SITE_ID: "client_pabna_01",
