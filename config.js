@@ -13,7 +13,7 @@ var APP_CONFIG = Object.freeze({
   ADMIN_API_URL: "https://script.google.com/macros/s/AKfycbx4QyzlBqqyKActc3g-P9FkmoTSfZLVA418iSXa0x7VS3RMylbT4u9Vh55kk6lmRn6Q/exec",
 
   // MUST be unique for every deployed client instance.
-  SITE_ID: "client_pabna_01",
+  SITE_ID: "",
 
   // OAuth scopes requested from each client's personal Google account.
   SCOPES: "https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/drive.file",
