@@ -297,53 +297,114 @@ function isExpiryValid(expiry) {
 
 async function checkSubscriptionStatus() {
   subscriptionValid = false;
+  subscriptionExpiry = '';
+  subscriptionState = 'Checking';
+
+  // Subscription যাচাই না হওয়া পর্যন্ত অ্যাপ লক থাকবে।
   setSubscriptionLock(true, 'Subscription status যাচাই করা হচ্ছে…');
 
   const url = String(ADMIN_API_URL || '').trim();
   const siteId = String(SITE_ID || '').trim();
 
+  // Subscription API অথবা URL-এর SITE_ID না থাকলে অ্যাপ খুলবে না।
   if (!url || url.includes('PASTE_') || !siteId) {
-    setSubscriptionLock(true, 'Admin API বা SITE_ID config.js-এ সেট করা হয়নি।');
+    subscriptionState = 'Unavailable';
+    setSubscriptionLock(
+      true,
+      'Subscription API অথবা URL-এর SITE_ID পাওয়া যায়নি।'
+    );
     return false;
   }
 
   try {
+    // Apps Script-এ URL parameter হিসেবে SITE_ID পাঠানো হবে।
     const endpoint = new URL(url);
     endpoint.searchParams.set('site_id', siteId);
+
+    // পুরোনো cached response ব্যবহার না করার জন্য।
     endpoint.searchParams.set('_ts', Date.now().toString());
 
     const response = await fetch(endpoint.toString(), {
       method: 'GET',
       cache: 'no-store',
-      headers: {'Accept': 'application/json'}
+      headers: {
+        'Accept': 'application/json'
+      }
     });
 
-    if (!response.ok) throw new Error('Admin API HTTP ' + response.status);
+    if (!response.ok) {
+      throw new Error('Subscription API HTTP ' + response.status);
+    }
 
     const result = await response.json();
-    const status = String(result.status || '').trim().toLowerCase();
-    const expiry = String(result.expiry_date || '').slice(0, 10);
+
+    // Apps Script থেকে অবশ্যই status এবং expiry_date আসতে হবে।
+    const status = String(result?.status || '')
+      .trim()
+      .toLowerCase();
+
+    const expiry = String(result?.expiry_date || '')
+      .trim()
+      .slice(0, 10);
+
     subscriptionExpiry = expiry;
 
+    // শুধুমাত্র Active + Valid Expiry হলে অ্যাপ খুলবে।
     const active = status === 'active' && isExpiryValid(expiry);
+
     if (!active) {
-      subscriptionState = status === 'paused' ? 'Paused' : 'Expired';
+      if (status === 'paused') {
+        subscriptionState = 'Paused';
+
+        setSubscriptionLock(
+          true,
+          `Status: Paused${expiry ? ' • Expiry: ' + expiry : ''}`
+        );
+
+        return false;
+      }
+
+      if (status === 'active' && !isExpiryValid(expiry)) {
+        subscriptionState = 'Expired';
+
+        setSubscriptionLock(
+          true,
+          `Subscription expired${expiry ? ' • Expiry: ' + expiry : ''}`
+        );
+
+        return false;
+      }
+
+      subscriptionState = 'Unavailable';
+
       setSubscriptionLock(
         true,
-        `Status: ${status || 'Unknown'}${expiry ? ' • Expiry: ' + expiry : ''}`
+        `Subscription Active নয়${status ? ' • Status: ' + status : ''}`
       );
+
       return false;
     }
 
+    // এখানে শুধু Active + Valid Expiry হলে অ্যাপ Unlock হবে।
     subscriptionState = 'Active';
     subscriptionValid = true;
+
     setSubscriptionLock(false);
+
     return true;
+
   } catch (error) {
     console.error('Subscription check failed:', error);
+
+    // API/network error হলে নিরাপত্তার জন্য অ্যাপ Locked থাকবে।
     subscriptionState = 'Unavailable';
-    // Fail closed so a network/API error cannot be used to bypass licensing.
-    setSubscriptionLock(true, 'Subscription status যাচাই করা যায়নি। Internet/API সংযোগ পরীক্ষা করুন।');
+    subscriptionValid = false;
+
+    setSubscriptionLock(
+      true,
+      'Subscription status যাচাই করা যায়নি। Internet/API সংযোগ পরীক্ষা করুন।'
+    );
+
     return false;
   }
 }
