@@ -429,10 +429,158 @@ function updateDriveConnectionStatus(connected){
 }
 
 function driveToken(manual=true){if(!subscriptionAllows('Google Drive'))return;if(!onlineNow())return alert('Google Drive সংযুক্ত করতে Internet চালু করুন।');loadGIS(ok=>{if(!ok||!driveReady())return alert('Google OAuth Client ID/Google Sign-In পাওয়া যায়নি।');tokenClient=google.accounts.oauth2.initTokenClient({client_id:GOOGLE_CLIENT_ID,scope:SCOPES,callback:async r=>{if(r.error){updateBackupStatus('Google Drive সংযোগ করা যায়নি।');return}accessToken=r.access_token;driveConnected=true;localStorage.setItem('shudhu-baki-drive-connected','1');updateDriveConnectionStatus(true);driveTokenExpiresAt=Date.now()+Math.max(1,Number(r.expires_in||3600)-60)*1000;localStorage.setItem('shudhu-baki-drive-expiry',String(driveTokenExpiresAt));updateBackupStatus('Google Drive সংযুক্ত হয়েছে।');updateDriveConnectionStatus(true);await driveBackup(true)}});tokenClient.requestAccessToken({prompt:manual?'consent':'none'})})}
-async function ensureDriveAccess(){if(!subscriptionValid||!driveReady()||!onlineNow())return false;if(accessToken&&Date.now()<driveTokenExpiresAt)return true;accessToken=null;return new Promise(resolve=>{loadGIS(ok=>{if(!ok||!driveReady())return resolve(false);tokenClient=google.accounts.oauth2.initTokenClient({client_id:GOOGLE_CLIENT_ID,scope:SCOPES,callback:r=>{if(r.error){driveConnected=false;localStorage.setItem('shudhu-baki-drive-connected','0');return resolve(false)}accessToken=r.access_token;driveConnected=true;localStorage.setItem('shudhu-baki-drive-connected','1');updateDriveConnectionStatus(true);driveTokenExpiresAt=Date.now()+Math.max(1,Number(r.expires_in||3600)-60)*1000;localStorage.setItem('shudhu-baki-drive-expiry',String(driveTokenExpiresAt));resolve(true)}});tokenClient.requestAccessToken({prompt:'none'})})})}
-async function driveFetch(url,opts={}){let r=await fetch(url,{...opts,headers:{...(opts.headers||{}),Authorization:'Bearer '+accessToken}});if(r.status===401){accessToken=null;throw Error('AUTH')};if(!r.ok)throw Error(await r.text());return r.json()}
+
+async function ensureDriveAccess(){
+  if(!subscriptionValid || !driveReady() || !onlineNow()) return false;
+
+  // Current token এখনও valid থাকলে সেটিই ব্যবহার করবে
+  if(accessToken && Date.now() < driveTokenExpiresAt) {
+    return true;
+  }
+
+  accessToken = null;
+
+  return new Promise(resolve=>{
+    loadGIS(ok=>{
+      if(!ok || !driveReady()) {
+        return resolve(false);
+      }
+
+      tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_CLIENT_ID,
+        scope: SCOPES,
+
+        callback: r => {
+
+          if(r.error || !r.access_token){
+
+            console.warn('Silent Google token request failed:', r);
+
+            driveConnected = false;
+
+            localStorage.setItem(
+              'shudhu-baki-drive-connected',
+              '0'
+            );
+
+            localStorage.removeItem(
+              'shudhu-baki-drive-expiry'
+            );
+
+            updateDriveConnectionStatus(false);
+
+            return resolve(false);
+          }
+
+          accessToken = r.access_token;
+
+          driveConnected = true;
+
+          localStorage.setItem(
+            'shudhu-baki-drive-connected',
+            '1'
+          );
+
+          driveTokenExpiresAt =
+            Date.now() +
+            Math.max(
+              1,
+              Number(r.expires_in || 3600) - 60
+            ) * 1000;
+
+          localStorage.setItem(
+            'shudhu-baki-drive-expiry',
+            String(driveTokenExpiresAt)
+          );
+
+          updateDriveConnectionStatus(true);
+
+          resolve(true);
+        }
+      });
+
+      try{
+        tokenClient.requestAccessToken({
+          prompt:'none'
+        });
+      }catch(error){
+        console.error(
+          'Google silent token error:',
+          error
+        );
+
+        driveConnected = false;
+
+        localStorage.setItem(
+          'shudhu-baki-drive-connected',
+          '0'
+        );
+
+        resolve(false);
+      }
+    });
+  });
+}
+
+
+
+async function driveFetch(url,opts={}){
+
+  if(!accessToken){
+    throw new Error('AUTH');
+  }
+
+  const headers = {
+    ...(opts.headers || {}),
+    Authorization: 'Bearer ' + accessToken
+  };
+
+  const r = await fetch(url,{
+    ...opts,
+    headers
+  });
+
+  if(r.status === 401){
+
+    console.warn(
+      'Google Drive token expired or unauthorized.'
+    );
+
+    accessToken = null;
+
+    driveConnected = false;
+
+    localStorage.setItem(
+      'shudhu-baki-drive-connected',
+      '0'
+    );
+
+    localStorage.removeItem(
+      'shudhu-baki-drive-expiry'
+    );
+
+    updateDriveConnectionStatus(false);
+
+    throw new Error('AUTH');
+  }
+
+  if(!r.ok){
+    throw new Error(await r.text());
+  }
+
+  return r.json();
+}
+
+
+
+
 async function ensureDriveFolder(){if(driveFolderId)return driveFolderId;let q=encodeURIComponent("name='সহজ হিসাব' and mimeType='application/vnd.google-apps.folder' and trashed=false and 'root' in parents");let f=await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&spaces=drive&fields=files(id,name)`);if(f.files?.length)return driveFolderId=f.files[0].id;let x=await driveFetch('https://www.googleapis.com/drive/v3/files',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'সহজ হিসাব',mimeType:'application/vnd.google-apps.folder',parents:['root']})});return driveFolderId=x.id}
+
+
 async function uploadOrUpdateDrive(name,mime,blob,folder){let q=encodeURIComponent(`name='${name}' and '${folder}' in parents and trashed=false`),f=await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&spaces=drive&fields=files(id,name)`),old=f.files?.[0];if(old){await driveFetch(`https://www.googleapis.com/upload/drive/v3/files/${old.id}?uploadType=media`,{method:'PATCH',headers:{'Content-Type':mime},body:blob});return old.id}let form=new FormData();form.append('metadata',new Blob([JSON.stringify({name,mimeType:mime,parents:[folder]})],{type:'application/json'}));form.append('file',blob);let r=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name',{method:'POST',headers:{Authorization:'Bearer '+accessToken},body:form});if(!r.ok)throw Error(await r.text());return (await r.json()).id}
+
+
+
 function mergeBackupData(remote,local){
   const out=JSON.parse(JSON.stringify(remote||{customers:[],settings:{}})); out.customers??=[]; out.settings??={};
   const byId=new Map(out.customers.map(c=>[String(c.id),c]));
