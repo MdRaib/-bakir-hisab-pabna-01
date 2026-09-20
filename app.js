@@ -230,6 +230,31 @@ function getSiteIdFromUrl() {
 
 // Use the URL SITE_ID for this client instance.
 SITE_ID = getSiteIdFromUrl();
+if (!SITE_ID) {
+  setTimeout(() => {
+    document.body.innerHTML = `
+      <div style="
+        position:fixed;
+        inset:0;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        background:#fff;
+        z-index:999999;
+        font-family:Arial,sans-serif;
+        text-align:center;
+        padding:20px;
+      ">
+        <div>
+          <h2>Access Denied</h2>
+          <p>Valid SITE_ID is required.</p>
+        </div>
+      </div>
+    `;
+  }, 0);
+
+  throw new Error('SITE_ID is missing from URL');
+}
 
 function setSubscriptionLock(locked, reason='') {
   const modal = $('#subscriptionLock');
