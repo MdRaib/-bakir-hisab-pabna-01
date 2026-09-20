@@ -220,6 +220,17 @@ let subscriptionValid = false;
 let subscriptionState = 'Checking';
 let subscriptionExpiry = '';
 
+// Get the client SITE_ID from the URL.
+// Example:
+// https://your-site.com/?site_id=client_pabna_01
+function getSiteIdFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  return String(params.get('site_id') || '').trim();
+}
+
+// Use the URL SITE_ID for this client instance.
+SITE_ID = getSiteIdFromUrl();
+
 function setSubscriptionLock(locked, reason='') {
   const modal = $('#subscriptionLock');
   if (!modal) return;
