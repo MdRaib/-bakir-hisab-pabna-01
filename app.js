@@ -852,7 +852,20 @@ async function driveBackup(silent=false){
     driveBusy = false;
   }
 }
-async function autoBackup(){if(subscriptionValid&&onlineNow()&&backupDirty&&driveConnected)await driveBackup(true)}window.addEventListener('online',()=>scheduleAutoBackup());document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')scheduleAutoBackup()});
+
+async function autoBackup(){
+  if(
+    subscriptionValid &&
+    onlineNow() &&
+    backupDirty
+  ){
+    await driveBackup(true);
+  }
+}
+window.addEventListener('online',()=>scheduleAutoBackup());document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')scheduleAutoBackup()});
+
+
+
 async function driveRestore(){if(!subscriptionAllows('Restore'))return;if(!await ensureDriveAccess())return alert('আগে Google Drive সংযুক্ত করুন।');try{let folder=await ensureDriveFolder(),r=await readDriveBackup(folder);if(!r?.data?.customers)return alert('Google Drive-এ JSON Backup পাওয়া যায়নি।');if(!confirm('Drive Backup দিয়ে বর্তমান হিসাব প্রতিস্থাপন করবেন?'))return;db=r.data;normalize();localStorage.setItem(KEY,JSON.stringify(db));await saveIDB();backupDirty=false;localStorage.setItem('shudhu-baki-backup-dirty','0');render();renderHalStatusLists();alert('Restore সফল হয়েছে।')}catch(e){console.error(e);alert('Restore করা যায়নি।')}}
 $('#backupBtn').onclick=()=>driveBackup(false);$('#connectDrive').onclick=()=>driveToken(true);$('#restoreDrive').onclick=()=>driveRestore();
 if('serviceWorker' in navigator){
