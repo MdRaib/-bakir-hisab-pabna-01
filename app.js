@@ -603,23 +603,254 @@ async function readDriveBackup(folder){
   return await driveFetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`);
 }
 async function driveBackup(silent=false){
-  if(!subscriptionValid)return false;
-  if(driveBusy)return false;
-  if(!db.customers.length){updateBackupStatus('অ্যাপে নতুন কোনো হিসাব নেই—Drive-এর পুরোনো Backup অপরিবর্তিত আছে।');if(!silent)toast('অ্যাপ খালি। পুরোনো Backup অপরিবর্তিত আছে।');return false}
-  driveBusy=true;
+
+  if(!subscriptionValid) return false;
+
+  if(driveBusy) return false;
+
+  if(!db.customers.length){
+
+    updateBackupStatus(
+      'অ্যাপে নতুন কোনো হিসাব নেই—Drive-এর পুরোনো Backup অপরিবর্তিত আছে।'
+    );
+
+    if(!silent){
+      toast(
+        'অ্যাপ খালি। পুরোনো Backup অপরিবর্তিত আছে।'
+      );
+    }
+
+    return false;
+  }
+
+  if(!onlineNow()){
+    updateBackupStatus(
+      'Internet নেই। Backup pending আছে।'
+    );
+    return false;
+  }
+
+  driveBusy = true;
+
   try{
-    if(!await ensureDriveAccess()){if(!silent)alert('Google Drive সংযুক্ত নেই।');return false}
-    const folder=await ensureDriveFolder();
-    const remote=await readDriveBackup(folder);
-    const merged=mergeBackupData(remote?.data,db);
-    const payload={app:'শুধু বাকি হিসাব',version:5,updatedAt:new Date().toISOString(),dateFormat:'DD-MM-YYYY',data:merged};
-    const jsonBlob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
-    await uploadOrUpdateDrive('sohoj-hisab-backup.json','application/json',jsonBlob,folder);
-    backupDirty=false;localStorage.setItem('shudhu-baki-backup-dirty','0');
-    updateBackupStatus('শেষ Backup: '+fmtDMY(today));
+
+    /*
+     * প্রথম চেষ্টা
+     */
+    let accessOk = await ensureDriveAccess();
+
+    /*
+     * Silent token কাজ না করলে auto backup
+     * সরাসরি fail করবে না।
+     */
+    if(!accessOk){
+
+      if(!silent){
+        alert(
+          'Google Drive session পাওয়া যাচ্ছে না। ' +
+          'Google Drive আবার সংযুক্ত করুন।'
+        );
+      }
+
+      return false;
+    }
+
+    let folder;
+
+    try{
+
+      folder = await ensureDriveFolder();
+
+    }catch(error){
+
+      /*
+       * Token expire হলে একবার নতুন token নিয়ে
+       * আবার Drive request চেষ্টা করবে।
+       */
+      if(error.message === 'AUTH'){
+
+        console.warn(
+          'Drive token expired. Refreshing token...'
+        );
+
+        accessToken = null;
+
+        const refreshed =
+          await ensureDriveAccess();
+
+        if(!refreshed){
+          throw error;
+        }
+
+        folder = await ensureDriveFolder();
+
+      }else{
+        throw error;
+      }
+    }
+
+    let remote;
+
+    try{
+
+      remote = await readDriveBackup(folder);
+
+    }catch(error){
+
+      if(error.message === 'AUTH'){
+
+        console.warn(
+          'Drive read unauthorized. Retrying...'
+        );
+
+        accessToken = null;
+
+        const refreshed =
+          await ensureDriveAccess();
+
+        if(!refreshed){
+          throw error;
+        }
+
+        folder = await ensureDriveFolder();
+
+        remote = await readDriveBackup(folder);
+
+      }else{
+        throw error;
+      }
+    }
+
+    const merged =
+      mergeBackupData(
+        remote?.data,
+        db
+      );
+
+    const payload = {
+      app:'শুধু বাকি হিসাব',
+      version:5,
+      updatedAt:new Date().toISOString(),
+      dateFormat:'DD-MM-YYYY',
+      data:merged
+    };
+
+    const jsonBlob =
+      new Blob(
+        [JSON.stringify(payload,null,2)],
+        {type:'application/json'}
+      );
+
+    try{
+
+      await uploadOrUpdateDrive(
+        'sohoj-hisab-backup.json',
+        'application/json',
+        jsonBlob,
+        folder
+      );
+
+    }catch(error){
+
+      if(error.message === 'AUTH'){
+
+        console.warn(
+          'Drive upload unauthorized. Retrying...'
+        );
+
+        accessToken = null;
+
+        const refreshed =
+          await ensureDriveAccess();
+
+        if(!refreshed){
+          throw error;
+        }
+
+        /*
+         * নতুন token পাওয়ার পরে folder ID
+         * এখনও valid থাকলে ব্যবহার করবে।
+         */
+        await uploadOrUpdateDrive(
+          'sohoj-hisab-backup.json',
+          'application/json',
+          jsonBlob,
+          folder
+        );
+
+      }else{
+        throw error;
+      }
+    }
+
+    /*
+     * শুধুমাত্র Drive-এ backup সফল হলে
+     * dirty=false হবে।
+     */
+    backupDirty = false;
+
+    localStorage.setItem(
+      'shudhu-baki-backup-dirty',
+      '0'
+    );
+
+    updateBackupStatus(
+      'শেষ Backup: ' + fmtDMY(today)
+    );
+
     return true;
-  }catch(e){console.error(e);updateBackupStatus('Backup ব্যর্থ হয়েছে। আবার চেষ্টা করুন।');if(!silent)alert('Backup করা যায়নি। Internet ও Google Drive অনুমতি পরীক্ষা করুন।');return false}
-  finally{driveBusy=false}
+
+  }catch(e){
+
+    console.error(
+      'Google Drive Backup failed:',
+      e
+    );
+
+    /*
+     * Backup fail হলে dirty অবশ্যই true থাকবে।
+     */
+    backupDirty = true;
+
+    localStorage.setItem(
+      'shudhu-baki-backup-dirty',
+      '1'
+    );
+
+    updateBackupStatus(
+      'Backup ব্যর্থ হয়েছে। আবার চেষ্টা করা হবে।'
+    );
+
+    if(!silent){
+      alert(
+        'Backup করা যায়নি। Internet এবং Google Drive permission পরীক্ষা করুন।'
+      );
+    }
+
+    /*
+     * কিছুক্ষণ পরে আবার চেষ্টা করবে।
+     */
+    if(subscriptionValid && onlineNow()){
+      clearTimeout(window.__backupRetryTimer);
+
+      window.__backupRetryTimer =
+        setTimeout(()=>{
+          if(
+            subscriptionValid &&
+            onlineNow() &&
+            backupDirty
+          ){
+            autoBackup();
+          }
+        },10000);
+    }
+
+    return false;
+
+  }finally{
+
+    driveBusy = false;
+  }
 }
 async function autoBackup(){if(subscriptionValid&&onlineNow()&&backupDirty&&driveConnected)await driveBackup(true)}window.addEventListener('online',()=>scheduleAutoBackup());document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')scheduleAutoBackup()});
 async function driveRestore(){if(!subscriptionAllows('Restore'))return;if(!await ensureDriveAccess())return alert('আগে Google Drive সংযুক্ত করুন।');try{let folder=await ensureDriveFolder(),r=await readDriveBackup(folder);if(!r?.data?.customers)return alert('Google Drive-এ JSON Backup পাওয়া যায়নি।');if(!confirm('Drive Backup দিয়ে বর্তমান হিসাব প্রতিস্থাপন করবেন?'))return;db=r.data;normalize();localStorage.setItem(KEY,JSON.stringify(db));await saveIDB();backupDirty=false;localStorage.setItem('shudhu-baki-backup-dirty','0');render();renderHalStatusLists();alert('Restore সফল হয়েছে।')}catch(e){console.error(e);alert('Restore করা যায়নি।')}}
